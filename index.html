@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <title>Moja Supabase Raketa</title>
+    <!-- Uvozimo Supabase biblioteku -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        .form-container {
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #form-message {
+            margin-top: 15px;
+        }
+        .success {
+            color: green;
+            padding: 10px;
+            background-color: #e6ffe6;
+            border-radius: 4px;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            background-color: #ffe6e6;
+            border-radius: 4px;
+        }
+        #lista-raketa {
+            text-align: left;
+            margin-top: 20px;
+        }
+        #lista-raketa li {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            position: relative;
+        }
+        .delete-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+        }
+        .delete-btn:hover {
+            background-color: #da190b;
+        }
+        .raketa-content {
+            padding-right: 90px;
+        }
+        .edit-btn {
+            position: absolute;
+            top: 10px;
+            right: 45px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .edit-btn:hover {
+            background-color: #0b7dda;
+        }
+        .search-container {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .search-input {
+            width: 100%;
+            max-width: 400px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        #raketa-id {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1 style="text-align: center;">🚀 Moje Rakete iz Oblaka</h1>
+    
+    <!-- Forma za unos novih raketa -->
+    <div class="form-container">
+        <h2 style="margin-top: 0;" id="form-title">Dodaj novu raketu</h2>
+        <form id="raketa-form">
+            <input type="hidden" id="raketa-id" name="raketa-id">
+            <div class="form-group">
+                <label for="naziv">Naziv rakete:</label>
+                <input type="text" id="naziv" name="naziv" required>
+            </div>
+            <div class="form-group">
+                <label for="tip">Tip rakete:</label>
+                <input type="text" id="tip" name="tip">
+            </div>
+            <div class="form-group">
+                <label for="opis">Opis:</label>
+                <textarea id="opis" name="opis"></textarea>
+            </div>
+            <button type="submit" id="submit-btn">Dodaj raketu</button>
+        </form>
+        <div id="form-message"></div>
+    </div>
+
+    <div style="text-align: center;">
+        <div class="search-container">
+            <input type="text" id="search-input" class="search-input" placeholder="Pretraži rakete po nazivu...">
+        </div>
+        <div id="status">Učitavam podatke...</div>
+        <ul id="lista-raketa" style="list-style: none; padding: 0;"></ul>
+    </div>
+
+    <script>
+    // Supabase konfiguracija i povezivanje
+    // Tabela: moje_rakete
+    // Kolone: id, ime_rakete, tip, opis
+    const SUPABASE_URL = 'https://cemqbunjbiwhfxwakhzl.supabase.co'
+    const SUPABASE_KEY = 'sb_publishable_9gJCHVCXcFMayk4NwFeyJg_R1jakk8U'
+    const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+
+    let trenutniEditId = null
+
+    // Funkcija za učitavanje i prikaz raketa
+    async function ucitajRakete(searchTerm = '') {
+        const statusDiv = document.getElementById('status')
+        const listaRaketa = document.getElementById('lista-raketa')
+        
+        statusDiv.textContent = 'Učitavam podatke...'
+        
+        let query = _supabase.from('moje_rakete').select('*')
+        
+        // Dodaj filter ako postoji search term
+        if (searchTerm && searchTerm.trim() !== '') {
+            query = query.ilike('ime_rakete', `%${searchTerm.trim()}%`)
+        }
+        
+        const { data, error } = await query.order('created_at', { ascending: false })
+        
+        if (error) {
+            statusDiv.textContent = 'Greška: ' + error.message
+            listaRaketa.innerHTML = ''
+        } else {
+            statusDiv.textContent = ''
+            
+            if (data.length === 0) {
+                listaRaketa.innerHTML = '<li>Nema dodatih raketa.</li>'
+            } else {
+                listaRaketa.innerHTML = data.map(raketa => `
+                    <li>
+                        <button class="delete-btn" onclick="obrisiRaketu(${raketa.id})" title="Obriši raketu">×</button>
+                        <button class="edit-btn" onclick="editRaketu(${raketa.id})" title="Izmeni raketu">Edit</button>
+                        <div class="raketa-content">
+                            <strong>${raketa.ime_rakete || 'Bez naziva'}</strong>
+                            ${raketa.tip ? '<br>Tip: ' + raketa.tip : ''}
+                            ${raketa.opis ? '<br>Opis: ' + raketa.opis : ''}
+                        </div>
+                    </li>
+                `).join('')
+            }
+        }
+    }
+
+    // Funkcija za brisanje rakete
+    async function obrisiRaketu(id) {
+        if (!confirm('Da li ste sigurni da želite da obrišete ovu raketu?')) {
+            return
+        }
+        
+        const { error } = await _supabase
+            .from('moje_rakete')
+            .delete()
+            .eq('id', id)
+        
+        if (error) {
+            alert('Greška pri brisanju: ' + error.message)
+        } else {
+            // Osveži listu raketa
+            await ucitajRakete()
+        }
+    }
+
+    // Funkcija za edit rakete (popunjava formu sa podacima)
+    async function editRaketu(id) {
+        trenutniEditId = id
+        
+        // Učitaj podatke rakete
+        const { data, error } = await _supabase
+            .from('moje_rakete')
+            .select('*')
+            .eq('id', id)
+            .single()
+        
+        if (error) {
+            alert('Greška pri učitavanju rakete: ' + error.message)
+            return
+        }
+        
+        // Popuni formu sa podacima
+        document.getElementById('raketa-id').value = data.id
+        document.getElementById('naziv').value = data.ime_rakete || ''
+        document.getElementById('tip').value = data.tip || ''
+        document.getElementById('opis').value = data.opis || ''
+        
+        // Promeni naslov forme i dugme
+        document.getElementById('form-title').textContent = 'Izmeni raketu'
+        document.getElementById('submit-btn').textContent = 'Sačuvaj izmene'
+        
+        // Scrolluj do forme
+        document.querySelector('.form-container').scrollIntoView({ behavior: 'smooth' })
+    }
+
+    // Funkcija za reset forme u add mode
+    function resetForma() {
+        trenutniEditId = null
+        document.getElementById('raketa-form').reset()
+        document.getElementById('raketa-id').value = ''
+        document.getElementById('form-title').textContent = 'Dodaj novu raketu'
+        document.getElementById('submit-btn').textContent = 'Dodaj raketu'
+    }
+
+    // Funkcija za dodavanje/izmenu rakete
+    async function dodajRaketu() {
+        const submitBtn = document.getElementById('submit-btn')
+        const formMessage = document.getElementById('form-message')
+        const raketaId = document.getElementById('raketa-id').value
+        
+        // Prikupimo podatke iz forme
+        const raketaData = {
+            ime_rakete: document.getElementById('naziv').value.trim(),
+            tip: document.getElementById('tip').value.trim() || null,
+            opis: document.getElementById('opis').value.trim() || null
+        }
+        
+        // Validacija
+        if (!raketaData.ime_rakete) {
+            formMessage.innerHTML = '<div class="error">Naziv rakete je obavezan!</div>'
+            return
+        }
+        
+        // Disable dugme tokom slanja
+        submitBtn.disabled = true
+        formMessage.innerHTML = ''
+        
+        let data, error
+        
+        if (raketaId && raketaId !== '') {
+            // Edit mode - koristi .update()
+            const result = await _supabase
+                .from('moje_rakete')
+                .update(raketaData)
+                .eq('id', raketaId)
+                .select()
+            
+            data = result.data
+            error = result.error
+        } else {
+            // Add mode - koristi .insert()
+            const result = await _supabase
+                .from('moje_rakete')
+                .insert([raketaData])
+                .select()
+            
+            data = result.data
+            error = result.error
+        }
+        
+        if (error) {
+            formMessage.innerHTML = '<div class="error">Greška: ' + error.message + '</div>'
+            submitBtn.disabled = false
+        } else {
+            const poruka = raketaId ? 'Raketa je uspešno izmenjena!' : 'Raketa je uspešno dodata!'
+            formMessage.innerHTML = '<div class="success">' + poruka + '</div>'
+            
+            // Resetuj formu
+            resetForma()
+            
+            // Osveži listu raketa
+            const searchInput = document.getElementById('search-input')
+            await ucitajRakete(searchInput.value)
+            
+            // Enable dugme
+            submitBtn.disabled = false
+            
+            // Sakrij poruku nakon 3 sekunde
+            setTimeout(() => {
+                formMessage.innerHTML = ''
+            }, 3000)
+        }
+    }
+
+    // Event listener za formu
+    document.getElementById('raketa-form').addEventListener('submit', async (e) => {
+        e.preventDefault()
+        await dodajRaketu()
+    })
+
+    // Event listener za search bar
+    document.getElementById('search-input').addEventListener('input', async (e) => {
+        const searchTerm = e.target.value
+        await ucitajRakete(searchTerm)
+    })
+
+    // Učitaj rakete pri učitavanju stranice
+    ucitajRakete()
+</script>
+</body>
+</html>
